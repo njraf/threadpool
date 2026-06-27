@@ -23,11 +23,22 @@ public:
 	 */
 	void enqueueTask(std::function<void()> &&task);
 
+	/** Sets the ThreadPool running state to false and waits for all active threads to be joined.
+	 *
+	 * @param completeTasks Whether to wait for the task queue to empty before joining all threads
+	 */
+	void joinAll(bool completeTasks = false);
+
+	/** Clears the task queue.
+	 */
+	void clearTasks();
+
 private:
 	unsigned int numThreads;
 	std::atomic<bool> running; //NOTE: condition_variable requires atomic variables to be changed behind a mutex. this could be non-atomic and still be correct.
 	std::mutex mut;
-	std::condition_variable cv;
+	std::condition_variable cv_run;
+	std::condition_variable cv_join;
 	std::queue<std::function<void()>> tasks;
 	std::vector<std::thread> threads;
 

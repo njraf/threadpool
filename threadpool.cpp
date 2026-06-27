@@ -13,15 +13,7 @@ ThreadPool::ThreadPool(unsigned int threadCount)
 
 ThreadPool::~ThreadPool()
 {
-	std::unique_lock lock(mut);
-	running = false;
-	lock.unlock();
-	cv.notify_all();
-	for (std::thread &thread : threads) {
-		if (thread.joinable()) {
-			thread.join();
-		}
-	}
+	joinAll();
 }
 
 void ThreadPool::enqueueTask(std::function<void()> &&task)
@@ -32,7 +24,30 @@ void ThreadPool::enqueueTask(std::function<void()> &&task)
 		return;
 	}
 	tasks.push(std::move(task));
-	cv.notify_one();
+	cv_run.notify_one();
+}
+
+void ThreadPool::joinAll(bool completeTasks)
+{
+	std::unique_lock lock(mut);
+	if (completeTasks) {
+		cv_join.wait(lock, [this](){ return tasks.empty(); });
+	}
+	running = false;
+	lock.unlock();
+	cv_run.notify_all();
+
+	for (std::thread &thread : threads) {
+		if (thread.joinable()) {
+			thread.join();
+		}
+	}
+}
+
+void ThreadPool::clearTasks()
+{
+	std::unique_lock lock(mut);
+	tasks = {};
 }
 
 void ThreadPool::superTask()
@@ -45,7 +60,9 @@ void ThreadPool::superTask()
 			lock.unlock();
 			task();
 		} else {
-			cv.wait(lock, [this](){ return !running || !tasks.empty(); });
+			cv_join.notify_one();
+			cv_run.wait(lock, [this](){ return !running || !tasks.empty(); });
 		}
-	} while(running); //NOTE: running is not protected by the `mut` mutex and may cause problems
+	} while(running); //NOTE: `running` is not protected by the `mut` mutex and may cause problems
 }
+
